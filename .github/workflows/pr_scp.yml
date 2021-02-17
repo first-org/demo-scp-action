@@ -1,0 +1,70 @@
+name: pr_scp
+
+on:
+  pull_request_review:
+  pull_request:
+    types: [opened]
+  push:
+    branches: [main]
+  
+jobs:
+
+  pr-scp:
+  
+    runs-on: ubuntu-latest
+
+    steps:      
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: |
+          pwd
+          echo "$GITHUB_CONTEXT"
+          echo "Test Action"
+          
+      - uses: octokit/request-action@v2.x
+        id: pr_files_changed
+        with:
+          #route: GET /repos/{owner}/{repo}/releases/latest
+          route: GET /repos/{owner}/{repo}/pulls/{pull_number}/files 
+          owner: ${{ github.event.repository.owner.login }}
+          repo: ${{ github.event.repository.name }}
+          pull_number: ${{ github.event.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: PR_Files_Dump
+        id: pr-files
+        env:
+          FILES_DUMP: ${{ toJSON(steps.pr_files_changed.outputs.data) }}
+          FILES_DUMP1: ${{ steps.pr_files_changed.outputs.data }}
+        run: |
+          echo "$FILES_DUMP"
+          echo $FILES_DUMP1
+          echo $FILES_DUMP1 | jq '.[].filename' 
+          echo $FILES_DUMP1 | jq '[.[].filename] | join(", ")'
+          export FILES_CHANGED=$(echo $FILES_DUMP1 | jq '[.[].filename] | join(", ")')
+          echo $FILES_CHANGED
+          echo "FILES_CHANGED=${FILES_CHANGED}" >> $GITHUB_ENV
+          echo '::set-output name=FILES_CHANGED::${FILES_CHANGED}'
+          echo "FILES_CHANGED_ENV=${FILES_CHANGED}" >> $GITHUB_ENV
+                            
+      - name: FILES_CHANGED
+        run: |
+          echo $FILES_CHANGED
+          echo ${{ steps.pr-files.outputs.FILES_CHANGED }}
+          echo ${{ env.FILES_CHANGED_ENV }}
+      - uses: actions/checkout@master
+      
+      - name: copy file via ssh key
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          port: ${{ secrets.PORT }}
+          key: ${{ secrets.KEY }}
+          #source: ${{ steps.pr-files.outputs.FILES_CHANGED }}
+          source: "deploy/*"
+          #source: ${{ env.FILES_CHANGED_ENV }}
+          target: "github"
+          debug: true
